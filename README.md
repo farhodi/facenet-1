@@ -1,3 +1,27 @@
+# Fine Tuning
+* Create a deep learning virtual machine on Ubuntu, as this comes with tensorflow-gpu preinstalled. It is tensorflow 1.8, and requirements.txt specifies tensorflow 1.7, but this works well.
+* Clone my fork of david sandberg's facenet: https://github.com/michaelperel/facenet-1.git
+* Run export PYTHONPATH=~/facenet/src
+* Do not install requirements.txt -> This includes tensorflow1.7, the cpu version. If you change requirements.txt to specify the tensorflow-gpu, the DLVM throws an error most likely because of mismatching versions of CUDA
+* Instead, activate py35 (a virtual environment that comes on the DLVM, with tensorflow-gpu), with source activate py35
+* To fine-tune, we first need (1) pretrained model and (2) images
+* Get the pretrained model from: https://github.com/davidsandberg/facenet#pre-trained-models, choosing VGGFace2 model
+* If you would like to use LFW images, get the images from https://github.com/davidsandberg/facenet/wiki/Validate-on-LFW
+* Facenet works on 160x160 images. To "align" the images to this format, run this script: (which is align.sh in my fork) https://github.com/davidsandberg/facenet/wiki/Validate-on-LFW#4-align-the-lfw-dataset
+* Alternatively, we pretrain on Arman's prealigned photos. NOTE: these prealigned images may have files such as .DS_Store and others, which are not images, and will cause the program to crash. Delete them first, using the script delete_non_images.py
+* Once you have aligned images and the model, we can fine-tune the network on the images.
+* This requires modifying code in src/train_softmax.py
+* We will retrain the network as a classifier, not using triplet loss. This means that in the pretrained model, there is a fixed amount of output classes in the logit layer. We want to load the pretrained model and weights, but we cannot load the logits layer since we have a different number of image classes (folders with people's names on it) than when the classifier was trained. -> My repo contains this fix (we "restore" everything from the pretrained model except for the last layer)
+* When specifying the model to reload, in the models folder there will be many files. Pass in the name {whatever_model}.ckpt-{num} even though that is not actually a file.
+* When we fine tune, we do not want to just restore the weights from the pretrained model (except for the last layer). As the last layer changes, big errors will propagate to lower layers in the network and ruin their learned weights.
+* Instead, we want to freeze all of the layers except for the last layer, and train that for awhile
+* As it trains, models will be saved in the model folder.
+* Once this converges, we will load in this checkpoint (keeping the logits layer this time)
+* Unfreeze layers just before the last layer and train those. Which layers should we unfreeze? Well, while there are nearly 500 variables that are trainable, since this is a resnet inception network, perhaps a good idea would be to unfreeze everything from the last block on.
+* Train this for awhile, and you have fine tuned the model
+* Check the diff of my fork versus sandberg's, which shows how to replace logits/fine-tune
+* Here is the command I have used to run it.
+```python src/train_softmax.py --logs_base_dir ~/logs/facenet/ --models_base_dir ~/models/facenet/20180402-114759/ --data_dir ~/test_mtcnn_1/ --image_size 160 --model_def models.inception_resnet_v1 --lfw_dir ~/datasets/lfw/lfw_mtcnnpy_160/ --optimizer ADAM --learning_rate -1 --max_nrof_epochs 150 --keep_probability 0.8 --random_crop --random_flip --use_fixed_image_standardization --learning_rate_schedule_file data/learning_rate_schedule_classifier_casia.txt --weight_decay 5e-4 --embedding_size 512 --lfw_distance_metric 1 --lfw_use_flipped_images --lfw_subtract_mean --validation_set_split_ratio 0.05 --validate_every_n_epochs 5 --prelogits_norm_loss_factor 5e-4 --pretrained_model ~/models/facenet/20180402-114759/model-20180402-114759.ckpt-275```
 # Face Recognition using Tensorflow [![Build Status][travis-image]][travis]
 
 [travis-image]: http://travis-ci.org/davidsandberg/facenet.svg?branch=master
